@@ -1,0 +1,19 @@
+Context →
+Q: What is 9923 plus 617?
+A:
+Target Completion →
+10540
+Figure G.49: Formatted dataset example for Arithmetic 4D+
+Context →
+Q: What is 40649 minus 78746?
+A:
+Target Completion →
+-38097
+Figure G.50: Formatted dataset example for Arithmetic 5D−
+Context →
+Q: What is 65360 plus 16204?
+A:
+Target Completion →
+81564
+Figure G.51: Formatted dataset example for Arithmetic 5D+
+62taining

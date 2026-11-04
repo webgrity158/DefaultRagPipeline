@@ -1,0 +1,13 @@
+langchain
+langchain-core
+langchain-community
+pypdf
+pymupdf
+ipykernel
+msoffcrypto-tool
+unstructured 
+openpyxl
+pandas
+python-calamine
+sentence-transformers
+chromadb
