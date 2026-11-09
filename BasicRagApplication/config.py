@@ -1,13 +1,14 @@
 # File Configurations
 DIRECTORY_PATH = "Datasets/pdf_files"
 FILE_TYPE = "pdf" # Options: "pdf", "docx", "txt", "csv", "json", "sql"
-IS_SINGLE_FILE = False
+IS_SINGLE_FILE = True
 SINGLE_FILE_PATH = "Datasets/pdf_files/gpt3_models.pdf"
 
 #Chunking Configurations
-CHUNKING_STRATEGY = "fixed-size" # Options: "sentence-based", "agentic", "recursive", "fixed-size", "semantic", "structured"
+CHUNKING_STRATEGY = "recursive" # Options: "sentence-based", "agentic", "recursive", "fixed-size", "semantic", "structured"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
+MIN_CHUNK_SIZE = 200
 
 #Embedding Configurations
 EMBEDDING_MODEL_TYPE = "sentence-transformers"

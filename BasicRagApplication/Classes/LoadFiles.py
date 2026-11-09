@@ -23,13 +23,8 @@ class LoadFiles:
         self.file_type = file_type
         self.is_single_file = is_single_file
         self.single_file_path = single_file_path
-
-        # If it's a single file, process that file; otherwise, process all files in the directory
-        if not self.is_single_file:
-            if self.file_type == "pdf":
-                self.load_pdf()
-
-    def validate_file(self, file: Path) -> bool:
+        
+    def _validate_file(self, file: Path) -> bool:
         supported_types = {
             "pdf": {".pdf"},
             "docx": {".docx"},
@@ -62,7 +57,7 @@ class LoadFiles:
             return False
         return True
 
-    def get_loader(self, file_type):
+    def _get_loader(self, file_type):
         match file_type.strip().lower().lstrip("."):
             case "pdf":
                 return PyMuPDFLoader
@@ -81,6 +76,9 @@ class LoadFiles:
 
 
     def load_files(self):
+        print("_"*50)
+        print("")
+        print("Loading files...")
         if self.is_single_file:
             file = Path(self.single_file_path)
             files = (file,)
@@ -95,25 +93,29 @@ class LoadFiles:
         all_documents = []
         processed_files = 0
 
-        for file in files:
+        print("-"*50)
+
+        for i, file in enumerate(files):
             if not file.is_file():
                 continue
 
             file_type = file.suffix.lower().lstrip(".")
-            loader_class = self.get_loader(file_type)
+            loader_class = self._get_loader(file_type)
 
             if loader_class is None:
                 if self.is_single_file:
-                    print(f"Unsupported file type: {file.suffix}")
+                    print(f"❌ Unsupported file type: {file.suffix}")
                     return False
                 continue
 
-            if not self.validate_file(file):
+            if not self._validate_file(file):
                 if self.is_single_file:
                     return False
                 continue
 
-            print(f"Processing file: {file}")
+            if i != 0:
+                print("\n")
+            print(f"🔃 Processing file: {file.name} from: {file.parent}")
 
             try:
                 loader_options = {}
@@ -138,13 +140,16 @@ class LoadFiles:
                 all_documents.extend(documents)
                 processed_files += 1
 
-                print(f"Loaded {len(documents)} documents from {file.name}.")
+                print(f"✅ Loaded {len(documents)} documents from {file.name}.")
             except Exception as e:
-                print(f"Error processing {file}: {e}")
+                print(f"❌ Error processing {file}: {e}")
                 return False
 
+        print("-"*50)
         print(
-            f"Loaded {len(all_documents)} documents "
+            f"✅ Loaded {len(all_documents)} documents "
             f"from {processed_files} files."
         )
+        print("_"*50)
+        print("\n")
         return all_documents
