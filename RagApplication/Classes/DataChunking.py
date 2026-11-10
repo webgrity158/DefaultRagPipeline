@@ -77,7 +77,6 @@ class DataChunking:
                 "semantic_threshold must be between -1 and 1"
             )
 
-
     def split_documents_into_chunks(self, documents):
         print("_" * 50)
         print(
@@ -561,7 +560,6 @@ class DataChunking:
         )
 
         return all_chunks
-    
     
     def semantic_chunking(self):
         """
