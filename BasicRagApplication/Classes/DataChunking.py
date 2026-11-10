@@ -1,11 +1,14 @@
-from config import CHUNKING_STRATEGY, CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE, EMBEDDING_MODEL_NAME, EMBEDDING_MODEL_TYPE
+from config import CHUNKING_STRATEGY, CHUNK_SIZE, CHUNK_OVERLAP, SEMANTIC_THRESHOLD, MIN_CHUNK_SIZE, EMBEDDING_MODEL_NAME, EMBEDDING_MODEL_TYPE, LLM_MODEL_NAME, LLM_MODEL_TYPE, OPENAI_API_KEY, GEMINI_API_KEY, LLM_MODEL_TEMPERATURE
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 import uuid
 import re
 import numpy as np
 from sentence_transformers import SentenceTransformer
-
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from tqdm.auto import tqdm
+from pydantic import BaseModel, Field
 
 class DataChunking:
     def __init__(
@@ -16,10 +19,21 @@ class DataChunking:
         min_chunk_size:int = MIN_CHUNK_SIZE,
         embedding_model_name:str = EMBEDDING_MODEL_NAME,
         embedding_model_type:str = EMBEDDING_MODEL_TYPE,
+        semantic_threshold:float = SEMANTIC_THRESHOLD,
+        llm_model_name:str = LLM_MODEL_NAME,
+        llm_model_type:str = LLM_MODEL_TYPE,
+        llm_model_temperature:float = LLM_MODEL_TEMPERATURE,
+        openai_api_key:str = OPENAI_API_KEY,
+        gemini_api_key:str = GEMINI_API_KEY,
     ):
         self.chunking_strategy = chunking_strategy
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.semantic_threshold = semantic_threshold
+        self.min_chunk_size = min(
+            max(0, min_chunk_size),
+            chunk_size,
+        )
         self.strategies = {
             "sentence-based": self.sentence_based_chunking,
             "agentic": self.agentic_chunking,
@@ -28,12 +42,40 @@ class DataChunking:
             "semantic": self.semantic_chunking,
             "structured": self.structured_chunking,
         }
-        self.min_chunk_size = min(
-            max(0, min_chunk_size),
-            chunk_size,
-        )
         self.embedding_model_name = embedding_model_name
         self.embedding_model_type = embedding_model_type
+        self.llm_model_name = llm_model_name
+        self.llm_model_type = llm_model_type
+        
+        if self.llm_model_type == "openai":
+            self.llm = ChatOpenAI(
+                model=self.llm_model_name,
+                temperature=llm_model_temperature,
+                api_key=openai_api_key,
+            )
+        elif self.llm_model_type == "google":
+            self.llm = ChatGoogleGenerativeAI(
+                model=self.llm_model_name,
+                google_api_key=gemini_api_key,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported LLM model type: {self.llm_model_type}"
+            )
+
+
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be greater than 0")
+
+        if not 0 <= chunk_overlap < chunk_size:
+            raise ValueError(
+                "chunk_overlap must be >= 0 and < chunk_size"
+            )
+
+        if not -1 <= semantic_threshold <= 1:
+            raise ValueError(
+                "semantic_threshold must be between -1 and 1"
+            )
 
 
     def split_documents_into_chunks(self, documents):
@@ -364,10 +406,164 @@ class DataChunking:
         return all_chunks
         
     def agentic_chunking(self):
-        pass
+        """
+        LLM-assisted topic boundary detection
+        with progress tracking.
+        """
+
+        if self.llm is None:
+            print(
+                "⚠️ No LLM configured. "
+                "Falling back to recursive chunking."
+            )
+            return self.recursive_chunking(self.documents)
+
+        class TopicBoundaries(BaseModel):
+            break_before: list[int] = Field(
+                description=(
+                    "Zero-based sentence indices where "
+                    "a new topic begins. Exclude 0."
+                )
+            )
+
+        structured_llm = self.llm.with_structured_output(
+            TopicBoundaries
+        )
+
+        all_chunks = []
+        max_window_chars = 6000
+
+        # STEP 1: Prepare windows for all documents
+        prepared_documents = []
+
+        for doc in self.documents:
+
+            sentences = self._get_sentences(
+                doc.page_content
+            )
+
+            if not sentences:
+                continue
+
+            windows = []
+            current_window = []
+            current_length = 0
+
+            for sentence in sentences:
+
+                if (
+                    current_window
+                    and current_length + len(sentence) + 1
+                    > max_window_chars
+                ):
+                    windows.append(current_window)
+                    current_window = []
+                    current_length = 0
+
+                current_window.append(sentence)
+                current_length += len(sentence) + 1
+
+            if current_window:
+                windows.append(current_window)
+
+            prepared_documents.append((doc, windows))
+
+        # STEP 2: Count total API calls
+        total_windows = sum(
+            len(windows)
+            for _, windows in prepared_documents
+        )
+
+        print(
+            f"🚀 Processing {len(prepared_documents)} documents "
+            f"across {total_windows} windows..."
+        )
+
+        # STEP 3: Start progress bar
+        with tqdm(
+            total=total_windows,
+            desc="🤖 Agentic Chunking",
+            unit="window",
+            dynamic_ncols=True,
+            colour="green",
+        ) as progress:
+
+            for doc, windows in prepared_documents:
+
+                chunks = []
+
+                for window in windows:
+
+                    numbered_text = "\n".join(
+                        f"{i}: {sentence}"
+                        for i, sentence in enumerate(window)
+                    )
+
+                    prompt = f"""
+                        You are analyzing a document for RAG chunking.
+
+                        Identify the sentence indices where a new
+                        logical topic begins.
+
+                        Rules:
+                        - Return only boundary indices.
+                        - Do not rewrite the document.
+                        - Do not include index 0.
+                        - Prefer meaningful topic changes.
+                        - Avoid unnecessary fragmentation.
+
+                        Document sentences:
+                        {numbered_text}
+                    """
+
+                    # Gemini API call
+                    response = structured_llm.invoke(prompt)
+
+                    boundaries = sorted({
+                        i for i in response.break_before
+                        if type(i) is int
+                        and 0 < i < len(window)
+                    })
+
+                    starts = [0] + boundaries
+                    ends = boundaries + [len(window)]
+
+                    for start, end in zip(starts, ends):
+
+                        topic_text = " ".join(
+                            window[start:end]
+                        )
+
+                        chunks.extend(
+                            self._pack_text([topic_text])
+                        )
+
+                    # Update after successful API call
+                    progress.update(1)
+
+                    progress.set_postfix(
+                        chunks=len(all_chunks) + len(chunks)
+                    )
+
+                chunks = self._apply_overlap(chunks)
+
+                all_chunks.extend(
+                    self._create_documents(
+                        doc,
+                        chunks,
+                        "agentic",
+                    )
+                )
+
+        print(
+            f"✅ Agentic chunking completed: "
+            f"{len(all_chunks)} chunks generated."
+        )
+
+        return all_chunks
     
     
-    def semantic_chunking(self, documents):
+    def semantic_chunking(self):
         """
         Uses sentence embeddings and cosine similarity.
 
@@ -377,7 +573,7 @@ class DataChunking:
         all_chunks = []
         model = self._get_embedding_model()
 
-        for doc in documents:
+        for doc in self.documents:
             sentences = self._get_sentences(
                 doc.page_content
             )

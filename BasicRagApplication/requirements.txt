@@ -11,3 +11,8 @@ pandas
 python-calamine
 sentence-transformers
 chromadb
+langchain-google-genai
+langchain-openai
+pydantic 
+python-dotenv
+tqdm
